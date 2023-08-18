@@ -5,4 +5,107 @@ format: html
 editor: visual
 ---
 
+```{r, echo=FALSE}
+# Loading Packages: 
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(RColorBrewer)
+library(maps)
+library(USAboundaries)
+library(tmaptools)
+```
 
+```{r, echo=FALSE}
+# Loading data: 
+crashes <- read.csv("vehicle_crashes.csv")
+bikes <- read_sf("bike_routes/geo_export_8fb5e1af-914b-4d85-b2d7-f4dc1ece90d0.shp")
+```
+
+```{r, echo=FALSE}
+
+# Creating the static map: 
+
+# wrangling data: 
+crashes_clean <- crashes |> 
+  tidyr::separate(CRASH.DATE, c("MONTH", "DAY", "YEAR"), sep = "/") |> 
+  filter(!is.na(ZIP.CODE), !is.na(LATITUDE), !is.na(LONGITUDE), !LOCATION == "(0.0, 0.0)")
+```
+
+```{r, echo=FALSE}
+# filtering for accidents involving bikes/e-bikes: 
+# creating 1st data frame
+brooklyn_bike1 <- crashes_clean |>
+  select(MONTH:YEAR, BOROUGH:NUMBER.OF.PERSONS.INJURED, NUMBER.OF.CYCLIST.INJURED, CONTRIBUTING.FACTOR.VEHICLE.1:CONTRIBUTING.FACTOR.VEHICLE.2, COLLISION_ID:VEHICLE.TYPE.CODE.2) |> 
+  filter(BOROUGH == "BROOKLYN", YEAR == "2020", VEHICLE.TYPE.CODE.1 == "Bike" | VEHICLE.TYPE.CODE.1 == "E-Bike", !VEHICLE.TYPE.CODE.2 == "")
+```
+
+```{r, echo=FALSE}
+# creating second data frame: 
+brooklyn_bike2 <- crashes_clean |>
+  select(MONTH:YEAR, BOROUGH:NUMBER.OF.PERSONS.INJURED, NUMBER.OF.CYCLIST.INJURED, CONTRIBUTING.FACTOR.VEHICLE.1:CONTRIBUTING.FACTOR.VEHICLE.2, COLLISION_ID:VEHICLE.TYPE.CODE.2) |> 
+  filter(BOROUGH == "BROOKLYN", YEAR == "2020", VEHICLE.TYPE.CODE.2 == "Bike" | VEHICLE.TYPE.CODE.2 == "E-Bike")
+```
+
+```{r, echo=FALSE}
+# filtering for specific zip codes w/in Brooklyn: 
+northbk_bike1 <- brooklyn_bike1 |> 
+  filter(ZIP.CODE == "11222" | ZIP.CODE == "11211" | ZIP.CODE == "11251" | ZIP.CODE == "11201" | ZIP.CODE == "11205" | ZIP.CODE == "11217" | ZIP.CODE == "11231" | ZIP.CODE == "11231" | ZIP.CODE == "11215" | ZIP.CODE == "11226" | ZIP.CODE == "11226" | ZIP.CODE == "11225" | ZIP.CODE == "11213" | ZIP.CODE == "11233" | ZIP.CODE == "11221" | ZIP.CODE == "11237" | ZIP.CODE == "11206" | ZIP.CODE == "11216" | ZIP.CODE == "11238")
+
+# also filtering for specific zip codes w/in Brooklyn: 
+northbk_bike2 <- brooklyn_bike2 |> 
+  filter(ZIP.CODE == "11222" | ZIP.CODE == "11211" | ZIP.CODE == "11251" | ZIP.CODE == "11201" | ZIP.CODE == "11205" | ZIP.CODE == "11217" | ZIP.CODE == "11231" | ZIP.CODE == "11231" | ZIP.CODE == "11215" | ZIP.CODE == "11226" | ZIP.CODE == "11226" | ZIP.CODE == "11225" | ZIP.CODE == "11213" | ZIP.CODE == "11233" | ZIP.CODE == "11221" | ZIP.CODE == "11237" | ZIP.CODE == "11206" | ZIP.CODE == "11216" | ZIP.CODE == "11238")
+```
+
+```{r, echo=FALSE}
+# filtering the map of the bike infrastructure for Brooklyn only: 
+bikes_northbk <- bikes |> 
+  filter(boro == "3", !is.na(ft_facilit))
+
+# getting map of Kings County (aka Brooklyn): 
+kings_county <- 
+  USAboundaries::us_counties(resolution = "high", states = c("new york")) |> 
+  select(-state_name) |> 
+  filter(name == "Kings")
+```
+
+```{r, echo=FALSE}
+# creating shapefiles for the two data frames 
+northbk_bike1_sf <- northbk_bike1 |> 
+  st_as_sf(coords = c("LONGITUDE", "LATITUDE"), crs = 4326)
+
+northbk_bike2_sf <- northbk_bike2 |> 
+  st_as_sf(coords = c("LONGITUDE", "LATITUDE"), crs = 4326)
+
+# adding a CRS to the bike infrastructure shapefile: 
+bikes_northbk <- bikes_northbk |> 
+  st_transform(4326)
+```
+
+```{r, echo=FALSE}
+# Creating the Static Map
+ggplot() +  
+  geom_sf(data = kings_county, fill = "grey95") +
+  geom_sf(data = bikes_northbk, aes(color = ft_facilit)) +
+  geom_sf(data = northbk_bike1_sf, color = "blue", aes(alpha = NUMBER.OF.CYCLIST.INJURED)) +
+   geom_sf(data = northbk_bike2_sf, color = "blue", aes(alpha = NUMBER.OF.CYCLIST.INJURED)) +
+  xlim(74.02, 73.9) + 
+  ylim(40.63, 40.74) +
+  labs(title = "Accidents Involving Cyclists
+       in Northern Brooklyn",
+       caption = "NYC Open Data, 2020",
+       alpha = "Injured Cyclists",
+       color = "Type of Intrastructure") +
+  theme(plot.title = element_text(size = 5)) +
+  theme_minimal() 
+```
+
+```{r, echo=FALSE}
+# Coding the interactive map: 
+
+leaflet() |> 
+  addTiles() |> 
+  addAwesomeMarkers(data = northbk_bike1_sf, clusterOptions = markerClusterOptions(), popup = ~paste(VEHICLE.TYPE.CODE.1, VEHICLE.TYPE.CODE.2, sep = ", ")) |> 
+  addAwesomeMarkers(data = northbk_bike2_sf, clusterOptions = markerClusterOptions(), popup = ~paste(VEHICLE.TYPE.CODE.1, VEHICLE.TYPE.CODE.2, sep = ", ")) |> 
+  addPolylines(data = bikes_northbk, weight = 2, popup = ~paste(ft_facilit)) 
+```
